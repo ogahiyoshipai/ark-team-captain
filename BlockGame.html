@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ブロック崩し～はやぴーからの挑戦状～</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FFB57B; /* 背景を薄いオレンジ色に変更 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        canvas {
+            background: #ffffff; /* ゲーム画面の背景を白に変更 */
+            border: 3px solid black; /* 外枠を黒に変更 */
+            border-radius: 1rem;
+            /* box-shadowを削除して枠線をはっきりとさせる */
+            touch-action: none; /* Prevent scrolling on touch */
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+        .message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.08);
+            text-align: center;
+            z-index: 1000;
+        }
+        .btn {
+            background-color: #3b82f6;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            font-weight: bold;
+            text-decoration: none;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container p-4 md:p-8">
+        <h1 class="text-3xl font-bold text-black">ブロック崩し</h1>
+        <canvas id="gameCanvas" width="320" height="480"></canvas>
+        <div class="flex space-x-4 mt-4">
+            <button id="startGameBtn" class="btn">ゲーム開始</button>
+            <button id="pauseGameBtn" class="btn hidden">一時停止</button>
+            <button id="resetGameBtn" class="btn hidden">リセット</button>
+        </div>
+    </div>
+    <div id="message-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const startGameBtn = document.getElementById('startGameBtn');
+            const pauseGameBtn = document.getElementById('pauseGameBtn');
+            const resetGameBtn = document.getElementById('resetGameBtn');
+            const messageContainer = document.getElementById('message-container');
+
+            let animationFrameId = null;
+            let gameStarted = false;
+            let isPaused = false;
+
+            // ゲーム変数
+            let ballX, ballY, ballDx, ballDy;
+            const ballRadius = 5;
+
+            let paddleHeight = 10;
+            let paddleWidth = 75;
+            let paddleX;
+
+            let brickRowCount = 5;
+            let brickColumnCount = 5;
+            let brickWidth = 50;
+            let brickHeight = 15;
+            let brickPadding = 10;
+            let brickOffsetTop = 30;
+            let brickOffsetLeft;
+            let bricks = [];
+
+            let score = 0;
+            let lives = 3;
+
+            function initGame() {
+                // ボールの初期位置と速度
+                ballX = canvas.width / 2;
+                ballY = canvas.height - 30;
+                ballDx = 2;
+                ballDy = -2;
+
+                // パドルの初期位置
+                paddleX = (canvas.width - paddleWidth) / 2;
+
+                // ブロックの初期化
+                bricks = [];
+                for (let c = 0; c < brickColumnCount; c++) {
+                    bricks[c] = [];
+                    for (let r = 0; r < brickRowCount; r++) {
+                        bricks[c][r] = { x: 0, y: 0, status: 1 };
+                    }
+                }
+
+                // ブロックの左側オフセットを動的に計算して中央に配置
+                const totalBricksWidth = (brickColumnCount * brickWidth) + ((brickColumnCount - 1) * brickPadding);
+                brickOffsetLeft = (canvas.width - totalBricksWidth) / 2;
+
+                score = 0;
+                lives = 3;
+            }
+
+            function drawBall() {
+                ctx.beginPath();
+                ctx.arc(ballX, ballY, ballRadius, 0, Math.PI * 2);
+                ctx.fillStyle = "#00008B"; // ボールを濃い青色に変更
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            function drawPaddle() {
+                ctx.beginPath();
+                ctx.rect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight);
+                ctx.fillStyle = "#1e40af";
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            function drawBricks() {
+                for (let c = 0; c < brickColumnCount; c++) {
+                    for (let r = 0; r < brickRowCount; r++) {
+                        if (bricks[c][r].status === 1) {
+                            const brickX = (c * (brickWidth + brickPadding)) + brickOffsetLeft;
+                            const brickY = (r * (brickHeight + brickPadding)) + brickOffsetTop;
+                            bricks[c][r].x = brickX;
+                            bricks[c][r].y = brickY;
+                            ctx.beginPath();
+                            ctx.rect(brickX, brickY, brickWidth, brickHeight);
+                            ctx.fillStyle = "#FF6A00"; // ブロックを炎のような色に変更
+                            ctx.fill();
+                            ctx.closePath();
+                        }
+                    }
+                }
+            }
+
+            function drawScore() {
+                ctx.font = "16px Inter";
+                ctx.fillStyle = "#4b5563";
+                ctx.fillText("Score: " + score, 8, 20);
+            }
+
+            function drawLives() {
+                ctx.font = "16px Inter";
+                ctx.fillStyle = "#4b5563";
+                ctx.fillText("Lives: " + lives, canvas.width - 65, 20);
+            }
+
+            function collisionDetection() {
+                for (let c = 0; c < brickColumnCount; c++) {
+                    for (let r = 0; r < brickRowCount; r++) {
+                        const b = bricks[c][r];
+                        if (b.status === 1) {
+                            if (ballX > b.x && ballX < b.x + brickWidth && ballY > b.y && ballY < b.y + brickHeight) {
+                                ballDy = -ballDy;
+                                b.status = 0;
+                                score++;
+                                if (score === brickRowCount * brickColumnCount) {
+                                    showMessage("おめでとうございます！クリアです！", true);
+                                    gameStarted = false;
+                                    cancelAnimationFrame(animationFrameId);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            function updateGame() {
+                // 壁との衝突
+                if (ballX + ballDx > canvas.width - ballRadius || ballX + ballDx < ballRadius) {
+                    ballDx = -ballDx;
+                }
+                if (ballY + ballDy < ballRadius) {
+                    ballDy = -ballDy;
+                } else if (ballY + ballDy > canvas.height - ballRadius) {
+                    // パドルとの衝突
+                    if (ballX > paddleX && ballX < paddleX + paddleWidth) {
+                        ballDy = -ballDy;
+                    } else {
+                        lives--;
+                        if (!lives) {
+                            showMessage("ゲームオーバー", true);
+                            gameStarted = false;
+                            cancelAnimationFrame(animationFrameId);
+                        } else {
+                            // ボールをリセット
+                            ballX = canvas.width / 2;
+                            ballY = canvas.height - 30;
+                            ballDx = 2;
+                            ballDy = -2;
+                            paddleX = (canvas.width - paddleWidth) / 2;
+                        }
+                    }
+                }
+
+                // ボールの位置を更新
+                ballX += ballDx;
+                ballY += ballDy;
+            }
+
+            function showMessage(text, showReset = false) {
+                let messageBox = document.createElement('div');
+                messageBox.className = 'message-box';
+                messageBox.innerHTML = `
+                    <p class="text-xl font-bold mb-4">${text}</p>
+                    <button id="closeMsgBtn" class="btn">OK</button>
+                `;
+                messageContainer.innerHTML = '';
+                messageContainer.appendChild(messageBox);
+
+                const closeBtn = document.getElementById('closeMsgBtn');
+                closeBtn.addEventListener('click', () => {
+                    messageContainer.innerHTML = '';
+                    if (showReset) {
+                        startGameBtn.classList.add('hidden');
+                        pauseGameBtn.classList.add('hidden');
+                        resetGameBtn.classList.remove('hidden');
+                    }
+                });
+            }
+
+            function draw() {
+                if (isPaused) return; // 一時停止中は描画をスキップ
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawBricks();
+                drawBall();
+                drawPaddle();
+                drawScore();
+                drawLives();
+                collisionDetection();
+                updateGame();
+                animationFrameId = requestAnimationFrame(draw);
+            }
+
+            function startGame() {
+                initGame();
+                gameStarted = true;
+                isPaused = false;
+                startGameBtn.classList.add('hidden');
+                pauseGameBtn.classList.remove('hidden');
+                resetGameBtn.classList.add('hidden');
+                messageContainer.innerHTML = '';
+                cancelAnimationFrame(animationFrameId);
+                draw();
+            }
+
+            function resetGame() {
+                startGame();
+            }
+
+            function togglePause() {
+                if (!gameStarted) return;
+                isPaused = !isPaused;
+                if (isPaused) {
+                    pauseGameBtn.textContent = '再開';
+                } else {
+                    pauseGameBtn.textContent = '一時停止';
+                    draw(); // 再開時にループを再開
+                }
+            }
+
+            // スマホ対応（タッチイベント）
+            canvas.addEventListener('touchmove', (e) => {
+                if (!gameStarted || isPaused) return;
+                const touchX = e.touches[0].clientX;
+                const relativeX = touchX - canvas.offsetLeft;
+                if (relativeX > 0 && relativeX < canvas.width) {
+                    paddleX = relativeX - paddleWidth / 2;
+                }
+            }, { passive: true });
+
+            // PC対応（マウスイベント）
+            canvas.addEventListener('mousemove', (e) => {
+                if (!gameStarted || isPaused) return;
+                const relativeX = e.clientX - canvas.offsetLeft;
+                if (relativeX > 0 && relativeX < canvas.width) {
+                    paddleX = relativeX - paddleWidth / 2;
+                }
+            });
+
+            // PC対応（キーボードイベント）
+            document.addEventListener('keydown', (e) => {
+                if (!gameStarted || isPaused) return;
+                if (e.key === 'ArrowRight') {
+                    paddleX = Math.min(paddleX + 10, canvas.width - paddleWidth);
+                } else if (e.key === 'ArrowLeft') {
+                    paddleX = Math.max(paddleX - 10, 0);
+                }
+            });
+
+            startGameBtn.addEventListener('click', startGame);
+            resetGameBtn.addEventListener('click', resetGame);
+            pauseGameBtn.addEventListener('click', togglePause);
+            
+            initGame();
+        });
+    </script>
+</body>
+</html>
